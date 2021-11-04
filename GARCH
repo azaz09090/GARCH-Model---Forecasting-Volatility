@@ -1,0 +1,108 @@
+pip install arch
+from random import gauss
+import matplotlib.pyplot as plt
+import numpy as np
+from arch import arch_model
+from statsmodels.graphics.tsaplots import plot_acf,plot_pacf
+
+#GARCH (2,2) - 2기간 전의 Volatility에 자기상관이 있다고 가정
+# 데이터 생성
+n = 1000
+omega = 0.5
+
+alpha_1 = 0.1
+alpha_2 = 0.2
+
+beta_1 = 0.3
+beta_2 = 0.4
+
+test_size = int(n*0.1)
+
+series = [gauss(0,1), gauss(0,1)]
+vols = [1, 1]
+
+for _ in range(n):
+    new_vol = np.sqrt(omega + alpha_1*series[-1]**2 + alpha_2*series[-2]**2 + 
+                      beta_1*vols[-1]**2 + beta_2*vols[-2]**2)
+    new_val = gauss(0,1) * new_vol
+    
+    vols.append(new_vol)
+    series.append(new_val)
+
+# 데이터 생성
+n = 1000
+omega = 0.5
+
+alpha_1 = 0.1
+alpha_2 = 0.2
+
+beta_1 = 0.3
+beta_2 = 0.4
+
+test_size = int(n*0.1)
+
+series = [gauss(0,1), gauss(0,1)]
+vols = [1, 1]
+
+for _ in range(n):
+    new_vol = np.sqrt(omega + alpha_1*series[-1]**2 + alpha_2*series[-2]**2 + 
+                      beta_1*vols[-1]**2 + beta_2*vols[-2]**2)
+    new_val = gauss(0,1) * new_vol
+    
+    vols.append(new_vol)
+    series.append(new_val)
+    
+plot_pacf(np.array(series)**2)
+plt.show()
+#What is a spike in statistics?
+#A spike is a comparatively large upward or downward movement of a price in a short period of time.
+#왜 GARCH 2,2를 썼는가에 대한 추론 - 2,3은 비슷하게 변동하다가 급감하는게 4이므로 2로 설정한것
+
+train, test = series[:-test_size], series[-test_size:]
+
+model = arch_model(train, p=2, q=2)
+#q를 0으로 바꿔주기만 하면 ARCH모델이 된다.
+
+model_fit = model.fit()
+model_fit.summary()
+# 각 parameter들의 추정들을 보자 - coef
+# omega를 0.5로 정햇는데 0.4741(not very off!)
+# 알파1 - 0.1, 알파2-0.2, 베타1 = 0.3, 베타2 = 0.4 으로 가정해놨었는데 
+# 각각 추정된 값을 보면 p value낮은 베타1  빼고 추정이 잘 됐다.
+
+# Predict the Volatility - 변동성을 예측하고 포트폴리오에 반영하자
+predictions = model_fit.forecast(horizon = test_size)
+# horizon은 예측하고 싶은 기간을 의미함
+from arch.__future__ import reindexing
+
+
+plt.figure(figsize = (10,4))
+true, = plt.plot(vols[-test_size:])
+preds, = plt.plot(np.sqrt(predictions.variance.values[-1, :]))
+plt.title('Volatility Predictions', fontsize = 20)
+plt.legend(['True Volatility', 'Predicted Volatility'], fontsize = 16)
+# 오렌지색이 예측된 변동성, 파란 그래프는 실제 변동성. - 안맞는데..60까진 꽤 맞는듯
+
+predictions_long_term = model_fit.forecast(horizon = 1000)
+plt.figure(figsize = (10,4))
+true, = plt.plot(vols[-test_size:])
+preds = plt.plot(np.sqrt(predictions_long_term.variance.values[-1 :]))
+plt.title('Long Term Volatility Prediction', fontsize = 20)
+plt.legend(['True Volatility', 'Predicted Volatility'], fontsize = 16)
+
+# Rolling Forecast Origin - 100개 이렇게 하지 않고 하나에 대해서만 예측하면 굉장히
+#강한 예측을 얻을 수가 있다.
+rolling_predictions = []
+for i in range(test_size):
+    train = series[:-(test_size-i)]
+    model = arch_model(train, p=2, q=2)
+    model_fit = model.fit(disp='off')
+    pred = model_fit.forecast(horizon=1)
+    rolling_predictions.append(np.sqrt(pred.variance.values[-1,:][0]))
+		
+plt.figure(figsize=(10,4))
+true, = plt.plot(vols[-test_size:])
+preds, = plt.plot(rolling_predictions)
+plt.title('Volatility Prediction - Rolling Forecast', fontsize=20)
+plt.legend(['True Volatility', 'Predicted Volatility'], fontsize=16)
+#거의 강력하게 따라붙는 것을 볼수가 있다.
