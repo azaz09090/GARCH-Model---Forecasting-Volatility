@@ -1,0 +1,86 @@
+# GARCH 파이썬으로 구현 - 장기 변동성 구하기. - Using ^KS11 20110101~20211101
+
+pip install yfinance
+import numpy as np
+import pandas as pd
+import yfinance as yf
+import matplotlib.pyplot as plt
+import scipy.optimize as spop
+
+# specify the sample
+ticker = '^KS11'
+start = '2011-01-01'
+end = '2021-11-01'
+
+#download data
+prices = yf.download(ticker, start, end)['Close']
+
+# Calculate the returns
+returns = np.array(prices)[1:]/np.array(prices)[:-1] - 1
+
+# starting parameter values - sample mean & Var
+mean = np.average(returns)
+var = np.std(returns)**2
+def garch_mle(params):
+    # 변수들 specify
+    mu = params[0] # 기대return - array의 첫번째 변수
+    omega = params[1]
+    alpha = params[2]
+    beta = params[3]# TGARCH등 다른거 해보려면 여기서 변수 수정하면 된다
+    #간단한 ARCH하려면 베타 삭제하면 된다.
+    #Calculate LR volatility
+    long_run = (omega/(1- alpha - beta))**(1/2)
+    # realized and conditional Volatility 계산
+    resid = returns - mu
+    realized = abs(resid)
+    conditional = np.zeros(len(returns))
+    conditional[0] = long_run
+    for t in range(1, len(returns)): #조건부 volatility = GARCH 공식 사용
+        conditional[t] = (omega + alpha*resid[t-1]**2 + beta*conditional[t-1]**2)**(1/2)
+        # 알파 = immediate persistant parameter?, 전날t-1사용 
+        # log-likelihood 계산
+    likelihood = 1/((2*np.pi)**(1/2)*conditional)*np.exp(-realized**2/(2*conditional**2))
+    log_likelihood = np.sum(np.log(likelihood))
+    return -log_likelihood
+    # 로그 우도? maximize(scipy에 minimize밖에 없어서 -로 만들고 minimize : scipy optimize
+res = spop.minimize(garch_mle, [mean, var, 0, 0], method = 'Nelder-Mead')
+    #최적화 함수에 4개의 파라미터의 원래 값을 집어넣는다 - 뮤 = mean, 오메가=var, 알파베타 = 0으로
+    #method는 Nelder-Mead 걍 써라
+    #retrive Optimal Parameters
+params = res.x
+mu = res.x[0]
+omega = res.x[1]
+alpha = res.x[2]
+beta = res.x[3]
+log_likelihood = -float(res.fun) # 다시 -를 해줘야돼
+
+# 이제 최적 파라미터값들이 나왔으니 그것에 대해서 realized와 조건부 volatility를 구해야해
+# 위에서 했던거랑 같다.
+
+long_run = (omega/(1- alpha - beta))**(1/2)
+resid = returns - mu
+realized = abs(resid)
+conditional = np.zeros(len(returns))
+conditional[0] = long_run
+for t in range(1, len(returns)):
+    conditional[t] = (omega + alpha*resid[t-1]**2 + beta*conditional[t-1]**2)**(1/2)
+
+# 최적 변수값들 print
+print('GARCH model Parameters')
+print('')
+print('mu '+str(round(mu, 6)))
+print('omega '+str(round(omega, 6)))
+print('alpha '+str(round(alpha, 6)))
+print('beta '+str(round(beta, 6)))
+print('long-run volatility '+str(round(long_run, 4)))
+print('log-likelihood '+str(round(log_likelihood, 4)))
+
+# 시각화
+plt.figure(1)
+plt.rc('xtick', labelsize = 10)
+plt.plot(prices. index[1:], realized)
+plt.plot(prices.index[1:], conditional)
+plt.show()
+
+# 일일 장기 변동성이 약 0.0096 정도를 반환
+# 실제 변동성이 BLUE, 조건부 변동성이 ORANGE
